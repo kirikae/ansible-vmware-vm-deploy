@@ -1,0 +1,85 @@
+---
+# tasks file for vmware-vm-deploy
+- name: "VMware VMs | Check for required variables"
+  block:
+    - fail:
+        msg: "Must set Ansible var 'vcenter_hostname' or environment var 'VCENTER_HOSTNAME'"
+      when: (vcenter_hostname is not defined) or (lookup('env','VCENTER_HOSTNAME') is not defined)
+    - fail: 
+        msg: "Must set Ansible var 'vcenter_username' or environment var 'VCENTER_USERNAME'"
+      when: (vcenter_username is not defined) or (lookup('env','VCENTER_USERNAME') is not defined)
+    - fail:
+        msg: "Must set Ansible var 'vcenter_password' or environment var 'VCENTER_PASSWORD'"
+      when: (vcenter_password is not defined) or (lookup('env','VCENTER_PASSWORD') is not defined)
+    - fail:
+        msg: "Must set Ansible var 'vcenter_datacenter' or environment var 'VCENTER_DATACENTER'"
+      when: (vcenter_datacenter is not defined) or (lookup('env','VCENTER_DATACENTER') is not defined)
+
+- name: "VMware VMs | Set a Creation Date fact"
+  set_fact:
+    creation_date: '{{ lookup('pipe','date "+%Y-%m-%d %H:%M"') }}'
+
+- name: "VMware VMs | Set a default VM note"
+  set_fact:
+    default_note: 'Deployed by Ansible on {{ creation_date }}'
+
+- name: "VMware VMs | Delete the VM"
+  guest:
+    hostname: '{{ vcenter_hostname | default(lookup('env','VCENTER_HOSTNAME')) }}'
+    username: '{{ vcenter_username | default(lookup('env','VCENTER_USERNAME')) }}'
+    password: '{{ vcenter_password | default(lookup('env','VCENTER_PASSWORD')) }}'
+    datacenter: '{{ vcenter_datacenter | default(lookup('env','VCENTER_DATACENTER')) }}'
+    folder: '{{ vm_folder }}'
+    name: '{{ vm_name | default(inventory_hostname_short) }}'
+    state: absent
+    force: '{{ vm_force_deletion | default(false) }}'
+    validate_certs: '{{ vcenter_validate_certs | default(false) }}'
+  delegate_to: localhost
+  when: vm_state == 'absent' or vm_force_deletion != false
+
+- name: "VMware VMs | Create VM Folder"
+  vcenter_folder:
+    hostname: '{{ vcenter_hostname | default(lookup('env','VCENTER_HOSTNAME')) }}'
+    username: '{{ vcenter_username | default(lookup('env','VCENTER_USERNAME')) }}'
+    password: '{{ vcenter_password | default(lookup('env','VCENTER_PASSWORD')) }}'
+    datacenter: '{{ vcenter_datacenter | default(lookup('env','VCENTER_DATACENTER')) }}'
+    folder_name: '{{ vm_folder }}'
+    folder_type: '{{ vm_folder_type | default('vm') }}'
+    state: '{{ vm_folder_state | default('present') }}'
+    validate_certs: '{{ validate_certs | default(false) }}'
+  delegate_to: localhost
+  when: vm_folder
+
+- name: "VMware VMs | Create the VM on {{ vcenter_cluster | default(esxi_hostname }}"
+  guest:
+    hostname: '{{ vcenter_hostname | default(lookup('env','VCENTER_HOSTNAME')) }}'
+    username: '{{ vcenter_username | default(lookup('env','VCENTER_USERNAME')) }}'
+    password: '{{ vcenter_password | default(lookup('env','VCENTER_PASSWORD')) }}'
+    datacenter: '{{ vcenter_datacenter | default(lookup('env','VCENTER_DATACENTER')) }}'
+    cluster: '{{ vcenter_cluster | default(lookup('env','VCENTER_CLUSTER')) | default(omit) }}'
+    esxi_hostname: '{{ esxi_hostname | default(lookup('env','ESXI_HOSTNAME')) | default(omit) }}'
+    state: present
+    force: '{{ vm_force_deletion | default(false) }}'
+    validate_certs: '{{ vcenter_validate_certs | default(false) }}'
+    name: '{{ vm_name | default(inventory_hostname_short) }}'
+    folder: '{{ vcenter_datacenter + '/vm/' + vm_folder }}'
+    guest_id: '{{ vm_guest_id | default(omit) }}'
+    template: '{{ vm_template_name | default(omit) }}'
+    annotation: '{{ default_note + '-' + vm_notes | default(omit) }}'
+    disk: '{{ vm_storage }}'
+    networks: '{{ vm_networking }}'
+    hardware:
+      hotadd_cpu: '{{ vm_cpu_hotadd | default(true) }}'
+      hotremove_cpu: '{{ vm_cpu_hotremove | default(true) }}'
+      num_cpus: '{{ vm_cpu_num }}'
+      num_cpu_cores_per_socket: '{{ vm_cpu_num_per_socket | default(omit) }}'
+      hotadd_memory: '{{ vm_memory_hotadd | default(true) }}'
+      memory_mb: '{{ vm_memory_mb }}'
+    customization:
+      hostname: '{{ vm_hostname | default(inventory_hostname_short) }}'
+      dns_servers: '{{ vm_networking['dns_servers'] | default(omit) }}'
+      password: '{{ vm_password | default(omit) }}'
+      runonce: '{{ vm_runonce | default(omit) }}'
+    wait_for_ip_address: '{{ vm_wait_for_ipaddr | default(true) }}'
+  delegate_to: localhost
+  when: vm_state == true
